@@ -36,6 +36,18 @@ yarn-error.log*
 # vercel
 .vercel
 
+# база данных SQLite
+/prisma/dev.db
+/prisma/dev.db-journal
+/prisma/*.db
+/prisma/*.db-journal
+
+# загруженные файлы (сканы/фото)
+/uploads
+/var/uploads
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma

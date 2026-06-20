@@ -1,0 +1,279 @@
+// Центр жизни — модель данных
+// SQLite + Prisma. Enum'ы недоступны на SQLite, поэтому «перечисления»
+// хранятся строками с фиксированным набором значений (см. комментарии).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── Люди: я / дети / семья (привязка записей и цвета в расписании) ──
+model Person {
+  id        String    @id @default(cuid())
+  name      String
+  kind      String // SELF | CHILD | FAMILY
+  birthDate DateTime?
+  color     String    @default("#6366f1")
+  order     Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  documents          Document[]
+  scheduleEvents     ScheduleEvent[]
+  growth             GrowthMeasurement[]
+  childEvents        ChildEvent[]
+  checklistTemplates ChecklistTemplate[]
+  shoppingItems      ShoppingItem[]
+}
+
+// ── 1. Документы (сканы) ──
+model Document {
+  id        String   @id @default(cuid())
+  title     String
+  category  String? // Паспорт, Страховка, Медкарта, … (свободный текст)
+  notes     String?
+  personId  String?
+  person    Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // файлы — через Attachment (entityType = "document")
+
+  @@index([category])
+  @@index([personId])
+}
+
+// ── 2. Чек-листы: шаблоны + запуски + серии ──
+model ChecklistTemplate {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  frequency   String // DAILY | WEEKLY | CUSTOM
+  personId    String?
+  person      Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
+  archived    Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  items ChecklistItemTemplate[]
+  runs  ChecklistRun[]
+}
+
+model ChecklistItemTemplate {
+  id         String            @id @default(cuid())
+  templateId String
+  template   ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  label      String
+  order      Int               @default(0)
+
+  runItems ChecklistRunItem[]
+}
+
+model ChecklistRun {
+  id          String            @id @default(cuid())
+  templateId  String
+  template    ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  date        DateTime // день/период запуска
+  completedAt DateTime?
+  createdAt   DateTime          @default(now())
+
+  items ChecklistRunItem[]
+
+  @@index([templateId, date])
+}
+
+model ChecklistRunItem {
+  id             String                 @id @default(cuid())
+  runId          String
+  run            ChecklistRun           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  itemTemplateId String?
+  itemTemplate   ChecklistItemTemplate? @relation(fields: [itemTemplateId], references: [id], onDelete: SetNull)
+  label          String // снимок названия на момент запуска
+  checked        Boolean                @default(false)
+  checkedAt      DateTime?
+}
+
+// ── 2b. Недельная рутина (чек-листы ухода/тренировок по дням) ──
+// Многоразовые повторяющиеся задачи: категория + время дня + дни недели.
+// Отметка выполнения — RoutineCheck на конкретную дату.
+model RoutineTask {
+  id        String   @id @default(cuid())
+  category  String // «Уход за лицом», «Тренировка», «Добавки», «Полив цветов» …
+  timeOfDay String // DAY | EVENING (день / вечер)
+  label     String
+  detail    String? // подсказка/описание из плана
+  days      String   @default("1234567") // дни недели: 1=Пн … 7=Вс, напр. "135"
+  personId  String?
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  checks RoutineCheck[]
+
+  @@index([category])
+}
+
+model RoutineCheck {
+  id     String  @id @default(cuid())
+  taskId String
+  task   RoutineTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  date   String // локальная дата YYYY-MM-DD (по МСК)
+
+  @@unique([taskId, date])
+  @@index([date])
+}
+
+// ── 3. Расписание тренировок (с повторениями) ──
+model ScheduleEvent {
+  id           String    @id @default(cuid())
+  title        String
+  trainingType String?
+  personId     String?
+  person       Person?   @relation(fields: [personId], references: [id], onDelete: SetNull)
+  location     String?
+  start        DateTime // начало первой итерации (дата+время)
+  end          DateTime? // окончание первой итерации (для длительности)
+  allDay       Boolean   @default(false)
+  rrule        String? // iCal RRULE, напр. "FREQ=WEEKLY;BYDAY=MO,WE"
+  notes        String?
+  createdAt    DateTime  @default(now())
+
+  exceptions EventException[]
+
+  @@index([personId])
+  @@index([start])
+}
+
+model EventException {
+  id       String        @id @default(cuid())
+  eventId  String
+  event    ScheduleEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  date     DateTime // дата конкретной итерации
+  kind     String // CANCELLED | MOVED
+  newStart DateTime?
+  newEnd   DateTime?
+}
+
+// ── 4. Дети: рост/вес + события с напоминаниями ──
+model GrowthMeasurement {
+  id       String   @id @default(cuid())
+  personId String
+  person   Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  date     DateTime
+  heightCm Float?
+  weightKg Float?
+  note     String?
+
+  @@index([personId, date])
+}
+
+model ChildEvent {
+  id             String    @id @default(cuid())
+  personId       String
+  person         Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  title          String
+  type           String // DOCTOR | CHECKUP | TRIP | OTHER
+  date           DateTime
+  location       String?
+  notes          String?
+  reminderDays   Int       @default(2) // за сколько дней напоминать
+  lastNotifiedAt DateTime?
+  done           Boolean   @default(false)
+
+  @@index([personId, date])
+  @@index([date])
+}
+
+// ── 5. Места ──
+model Place {
+  id        String   @id @default(cuid())
+  name      String
+  category  String?
+  status    String   @default("WANT") // WANT | VISITED
+  notes     String?
+  link      String?
+  address   String?
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+  // фото — через Attachment (entityType = "place")
+
+  @@index([status])
+}
+
+// ── 6-8. Списки покупок (дом / себе / детям) ──
+model ShoppingList {
+  id    String         @id @default(cuid())
+  kind  String // HOME | SELF | KIDS
+  name  String
+  order Int            @default(0)
+  items ShoppingItem[]
+}
+
+model ShoppingItem {
+  id        String       @id @default(cuid())
+  listId    String
+  list      ShoppingList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  name      String
+  quantity  String? // "2", "500 г" — свободный текст
+  category  String?
+  personId  String? // разбивка списка детей по ребёнку
+  person    Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
+  bought    Boolean      @default(false)
+  order     Int          @default(0)
+  createdAt DateTime     @default(now())
+
+  @@index([listId, bought])
+}
+
+// ── 9. Аптечка ──
+model Medicine {
+  id         String    @id @default(cuid())
+  name       String
+  category   String? // напр. «Жаропонижающие», «Антисептики»
+  quantity   String? // "1 уп", "20 таб"
+  expiryDate DateTime?
+  purpose    String?
+  notes      String?
+  needToBuy  Boolean   @default(false) // в списке «нужно купить»
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([expiryDate])
+  @@index([category])
+}
+
+// ── Универсальные вложения (фото/PDF в любом разделе) ──
+model Attachment {
+  id         String   @id @default(cuid())
+  entityType String // document | place | child | medicine | ...
+  entityId   String
+  fileName   String
+  storageKey String // путь в локальном хранилище или ключ S3
+  mimeType   String
+  kind       String // IMAGE | PDF
+  size       Int
+  width      Int?
+  height     Int?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+// ── Push-подписки устройств ──
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  label     String?
+  createdAt DateTime @default(now())
+}
+
+// ── Прочие настройки (key-value) ──
+model AppSetting {
+  key   String @id
+  value String
+}
