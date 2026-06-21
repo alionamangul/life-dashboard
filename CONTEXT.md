@@ -7,6 +7,8 @@
 ## Что это
 Mobile-first веб-приложение, русский UI. Один общий пароль на вход. Все данные чувствительные (документы, дети, здоровье). 9 модулей: документы, чек-листы, расписание тренировок, дети, места, 3 списка покупок, аптечка.
 
+**🌐 Прод:** приложение развёрнуто и всегда доступно — **https://life.alena.com.ru** (HTTPS). GitHub: `alionamangul/life-dashboard`. Как именно настроен деплой/обновление прода (авто из GitHub или вручную) — уточнить у пользователя.
+
 ## Стек и окружение
 - **Next.js 16.2.9** (App Router, Turbopack) + TypeScript + React 19
 - **Prisma 6.19.3 + SQLite** (`prisma/dev.db`)
@@ -90,3 +92,21 @@ experimental: {
 - `set-password.mjs "пароль"` — сменить пароль входа
 - `import-documents.mjs "путь/к/папке"` — массовый импорт сканов (файл → документ)
 - `set-category-covers.mjs "путь/к/папке"` — обложки категорий из фото (имя файла = имя категории)
+
+---
+
+## 🚀 Деплой (production) — обновлено 21.06.2026
+
+**Живёт на сервере:** https://life.alena.com.ru — вход по паролю `family`.
+
+- **Сервер:** Timeweb VPS, Ubuntu 24.04, IP `147.45.212.70`. Каталог `/opt/apps/life-dashboard`.
+- **Запуск:** systemd-сервис `life-dashboard`, порт 3000 (`npm run start` — Next.js), автозапуск + рестарт.
+- **Reverse-proxy:** Caddy (`life.alena.com.ru` → localhost:3000), HTTPS Let's Encrypt автоматически.
+- **Сборка на сервере:** `npm ci && npx prisma generate && npm run build`.
+- **Данные (персистентны на сервере, в гит не попадают):**
+  - `prisma/dev.db` — база (SQLite);
+  - `var/uploads/` — загруженные документы/сканы (~245 МБ);
+  - `.env` — секреты: `APP_PASSWORD_HASH` (= base64 от bcrypt-хэша пароля `family`), `SESSION_SECRET`, `DATABASE_URL="file:./dev.db"`.
+- **Сменить пароль:** сгенерировать `bcrypt`-хэш нового пароля, закодировать в base64, записать в `APP_PASSWORD_HASH` в `.env` на сервере, `systemctl restart life-dashboard`.
+- **Перевыкладка:** `rsync` кода (без `node_modules`/`.next`), затем `npm ci && npm run build`, `systemctl restart life-dashboard`. Базу и `var/uploads` не перезатирать.
+- Переехал с локального Mac на сервер; данные перенесены с Mac (rsync).
