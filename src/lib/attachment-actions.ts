@@ -72,6 +72,25 @@ export async function setCategoryCover(
   redirect(`/documents/category/${encodeURIComponent(category)}`);
 }
 
+// Точка фокуса обложки (0..1) — куда центрировать кадр (по лицу).
+export async function setAttachmentFocus(
+  id: string,
+  x: number,
+  y: number
+): Promise<void> {
+  if (!id) return;
+  const fx = Math.max(0, Math.min(1, x));
+  const fy = Math.max(0, Math.min(1, y));
+  const att = await prisma.attachment.update({
+    where: { id },
+    data: { focalX: fx, focalY: fy },
+  });
+  revalidatePath("/documents");
+  if (att.entityType === "categoryCover") {
+    revalidatePath(`/documents/category/${encodeURIComponent(att.entityId)}`);
+  }
+}
+
 export async function removeCategoryCover(
   category: string,
   _formData: FormData

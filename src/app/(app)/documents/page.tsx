@@ -12,7 +12,17 @@ type Tile = {
   href: string;
   count: number;
   coverId: string | null;
+  objectPosition: string;
 };
+
+// верхняя треть по умолчанию (где обычно лицо), либо заданная точка фокуса
+const DEFAULT_POS = "center 30%";
+function focalPos(focalX: number | null, focalY: number | null): string {
+  if (focalX != null && focalY != null) {
+    return `${focalX * 100}% ${focalY * 100}%`;
+  }
+  return DEFAULT_POS;
+}
 
 export default async function DocumentsPage() {
   const [docs, thumbs, covers] = await Promise.all([
@@ -21,8 +31,8 @@ export default async function DocumentsPage() {
     prisma.attachment.findMany({ where: { entityType: "categoryCover" } }),
   ]);
 
-  // имя категории → id вложения-обложки
-  const coverByCat = new Map(covers.map((c) => [c.entityId, c.id]));
+  // имя категории → вложение-обложка (с точкой фокуса)
+  const coverByCat = new Map(covers.map((c) => [c.entityId, c]));
 
   // группируем документы по категории (null → общий список)
   const byCat = new Map<string | null, typeof docs>();
@@ -51,6 +61,7 @@ export default async function DocumentsPage() {
       href: `/documents/category/${UNCATEGORIZED}`,
       count: uncat.length,
       coverId: coverFor(uncat),
+      objectPosition: DEFAULT_POS,
     });
   }
 
@@ -60,12 +71,16 @@ export default async function DocumentsPage() {
     .sort((a, b) => a.localeCompare(b));
   for (const c of cats) {
     const list = byCat.get(c)!;
+    const cover = coverByCat.get(c);
     tiles.push({
       key: c,
       name: c,
       href: `/documents/category/${encodeURIComponent(c)}`,
       count: list.length,
-      coverId: coverByCat.get(c) ?? coverFor(list),
+      coverId: cover?.id ?? coverFor(list),
+      objectPosition: cover
+        ? focalPos(cover.focalX, cover.focalY)
+        : DEFAULT_POS,
     });
   }
 
@@ -100,6 +115,7 @@ export default async function DocumentsPage() {
                 src={`/api/files/${t.coverId}?thumb=1`}
                 alt=""
                 className="h-full w-full object-cover"
+                style={{ objectPosition: t.objectPosition }}
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-3xl text-slate-400">

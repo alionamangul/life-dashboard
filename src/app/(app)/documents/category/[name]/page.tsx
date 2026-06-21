@@ -61,7 +61,12 @@ export default async function CategoryPage({
       </div>
 
       {!isUncategorized && (
-        <CoverControl category={name} coverId={cover?.id ?? null} />
+        <CoverControl
+          category={name}
+          coverId={cover?.id ?? null}
+          focalX={cover?.focalX ?? null}
+          focalY={cover?.focalY ?? null}
+        />
       )}
 
       {docs.length === 0 ? (

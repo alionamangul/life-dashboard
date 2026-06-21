@@ -257,6 +257,8 @@ model Attachment {
   size       Int
   width      Int?
   height     Int?
+  focalX     Float? // точка фокуса 0..1 (для обложек — центр по лицу)
+  focalY     Float?
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
