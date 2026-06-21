@@ -30,6 +30,38 @@ export function Attachments({
   const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<AttachmentView | null>(null);
+  const [sharing, setSharing] = useState(false);
+
+  // Отправить сам файл (а не ссылку) через системное меню «Поделиться».
+  // На iPhone даёт «Фото» в Telegram/Почту и т.д. Запасной путь — скачивание.
+  async function sharePhoto(att: AttachmentView) {
+    try {
+      setSharing(true);
+      const res = await fetch(`/api/files/${att.id}`);
+      const blob = await res.blob();
+      const file = new File([blob], att.fileName || "photo", {
+        type: blob.type || "application/octet-stream",
+      });
+      const nav = navigator as Navigator & {
+        canShare?: (d: { files: File[] }) => boolean;
+        share?: (d: { files: File[]; title?: string }) => Promise<void>;
+      };
+      if (nav.share && nav.canShare && nav.canShare({ files: [file] })) {
+        await nav.share({ files: [file], title: att.fileName });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = att.fileName || "photo";
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch {
+      // отмена пользователем или ошибка — игнорируем
+    } finally {
+      setSharing(false);
+    }
+  }
 
   return (
     <div>
@@ -113,6 +145,17 @@ export function Attachments({
           onClick={() => setPreview(null)}
         >
           <div className="flex justify-end p-4">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (preview) sharePhoto(preview);
+              }}
+              disabled={sharing}
+              className="mr-3 rounded-lg bg-white/20 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {sharing ? "…" : "Поделиться"}
+            </button>
             <a
               href={`/api/files/${preview.id}?download=1`}
               download
