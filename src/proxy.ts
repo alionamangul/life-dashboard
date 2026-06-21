@@ -28,7 +28,13 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  const res = NextResponse.next();
+  // Страницы и данные не кешируем — иначе PWA на домашнем экране показывает
+  // устаревшую версию. Файлы (/api/files) кешируются своими заголовками.
+  if (!pathname.startsWith("/api/")) {
+    res.headers.set("Cache-Control", "no-store, must-revalidate");
+  }
+  return res;
 }
 
 export const config = {
